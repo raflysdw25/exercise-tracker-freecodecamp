@@ -93,6 +93,7 @@ const findLogUser = (query, done) => {
     const response = {
       _id: data[0].userData._id,
       username: data[0].userData.username,
+      count: data.length,
       log: data.map((log) => {
         const formattedDate = log.date.toDateString();
         return {
