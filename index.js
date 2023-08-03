@@ -26,30 +26,51 @@ mongoose.connect(MONGO_URI, {
   useUnifiedTopology: true,
 });
 
+const getAllUser = require("./userExercises.js").getAllUser;
 const createUser = require("./userExercises.js").createUser;
 const addExercise = require("./userExercises.js").addExercise;
 const findLogUser = require("./userExercises.js").findLogUser;
 
-app.post("/api/users", function (req, res) {
-  const payload = { username: req.body.username };
-  createUser(payload, function (error, data) {
-    res.json({ _id: data._id, username: data.username });
+app
+  .route("/api/users")
+  .get(function (req, res) {
+    getAllUser(function (error, data) {
+      if (error) return res.json({ error: error });
+      res.json(data);
+    });
+  })
+  .post(function (req, res) {
+    const payload = { username: req.body.username };
+    createUser(payload, function (error, data) {
+      res.json({ _id: data._id, username: data.username });
+    });
   });
-});
+
+const formatDate = (validDate) => {
+  if (isNaN(Date.parse(validDate))) return null;
+  const fullDate = new Date(validDate);
+  const getYear = fullDate.getFullYear();
+  const getMonth = String(fullDate.getMonth() + 1).padStart(2, "0");
+  const getDay = String(fullDate.getDate()).padStart(2, "0");
+
+  return `${getYear}-${getMonth}-${getDay}`;
+};
+
 app.post("/api/users/:_id/exercises", function (req, res) {
+  const { description, duration, date } = req.body;
+  const getBodyDate =
+    !date || date === "" ? formatDate(new Date()) : formatDate(date);
+  if (!getBodyDate) {
+    res.json({ error: "Invalid Date Format" });
+    return;
+  }
   const payload = {
-    description: req.body.description,
-    duration: req.body.duration,
-    date: req.body.date,
+    description,
+    duration,
+    date: getBodyDate,
   };
   addExercise(req.params._id, payload, function (error, data) {
-    res.json({
-      username: data.username,
-      description: req.body.description,
-      duration: req.body.duration,
-      date: new Date(req.body.date).toDateString(),
-      _id: data._id,
-    });
+    res.json(data);
   });
 });
 
@@ -59,53 +80,28 @@ app.get("/api/users/:_id/logs", function (req, res) {
     res.json({ error: "Invalid query date format from or to" });
     return;
   }
-  const fromDate = from ? new Date(from) : null;
-  const toDate = to ? new Date(to) : null;
   const query = {
-    _id: mongoose.Types.ObjectId(req.params._id),
+    userId: mongoose.Types.ObjectId(req.params._id),
   };
 
-  const projections = {
-    username: 1, // Include username field
-    log: 1,
-  };
-
-  if (fromDate && toDate) {
-    query["log.date"] = { $gte: fromDate, $lte: toDate };
-    projections["log"] = {
-      $cond: {
-        if: {
-          $ifNull: ["$log", false],
-        },
-        then: {
-          $filter: {
-            input: "$log",
-            as: "logItem",
-            cond: {
-              $and: [
-                { $ifNull: ["$$logItem.date", true] },
-                { $gte: ["$$logItem.date", fromDate] },
-                { $lte: ["$$logItem.date", toDate] },
-              ],
-            },
-          },
-        },
-        else: "$log",
-      },
-    };
+  if (limit) {
+    query.limit = limit;
   }
 
-  findLogUser(query, projections, function (error, data) {
+  const fromDate = from ? new Date(from) : null;
+  const toDate = to ? new Date(to) : null;
+
+  if (fromDate && toDate) {
+    query.fromDate = fromDate;
+    query.toDate = toDate;
+  }
+
+  findLogUser(query, function (error, data) {
     if (error) {
       res.json({ error: error.message });
       return;
     }
-    res.json({
-      _id: data._id,
-      username: data.username,
-      count: data.log.length,
-      logs: limit ? data.log.slice(0, limit) : data.log,
-    });
+    res.json(data);
   });
 });
 
